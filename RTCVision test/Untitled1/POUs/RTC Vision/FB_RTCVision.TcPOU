@@ -1,0 +1,534 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_RTCVision" Id="{401919f6-551f-4fe1-9f5a-e582c33ee3cf}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_RTCVision
+VAR
+	bFirstCycle 						: BOOL := TRUE;				(* First cycle bit *)		
+	sName 								: STRING;					(* TCP/IP device name for other utilities *)	
+	
+	(* Internal status *)   			
+	bActive								: BOOL;						(* TCP/IP device initialized and ready to work *)
+	bBusy								: BOOL;						(* TCP/IP device is currently proccesing *)
+	bError								: BOOL;						(* Error occured while executing *)
+	iErrorID 							: UDINT;					(* Error ID*)
+	
+	(* Function blocks *)
+	fbTcpClient 						: FB_TcpClient;				(* FB to create client connection*)
+	
+	(* Messages buffers *)
+	stSendData							: ST_TcpBufferData;		(*  *)
+	stReciveData 						: ST_TcpBufferData;		(*  *)
+	
+	(* Temporary messeges *)
+	sSendMessage 						: STRING;				(*  *)
+	sReciveMessage						: STRING(1000);			(*  *)
+	arrBufferMessage					: ARRAY[0..10] OF STRING;
+	iMessageIndex	 					: INT;
+	sNewLine							: STRING := '$R$L';
+	
+	(* Status information and number *)
+	uStationNumber						: USINT;
+	sResult								: STRING;
+	
+	(* State machine *)
+	eCameraState		 				: E_RTCCameraState;			(* Current state of Camera connection *)
+	eCameraInitState					: E_RTCCameraInitState;		(* Current state of Camera initialization *)
+	eCameraMethodState					: E_RTCCameraMethodState;
+	eCameraGetImageState				: E_RTCCameraGetImageState;
+
+	(* Rising edge trigger *)
+	rtError								: R_TRIG; 					(* Rising edge trigger for function block error *)
+	
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(* First cycle procedure *)
+IF bFirstCycle THEN
+	bFirstCycle := FALSE;	
+		
+END_IF
+
+bActive := eCameraState >= RTC_READY;
+
+(* Report errors that occur *)
+rtError(CLK:=bError);
+
+IF rtError.Q THEN 
+	fbMachineLogger.MR_AddLogs(FUN_MergeStrings5(sName, ' : Error occured (error ID: ', UDINT_TO_STRING(iErrorID), ')', ''));
+
+END_IF
+
+(* Execute TCP/IP FB and timers *)
+fbTcpClient();
+
+(* Execute state machine *)
+StateMachine();]]></ST>
+    </Implementation>
+    <Folder Name="FirstCycle" Id="{30c230eb-0949-4bf6-9250-579077dbe0d9}" />
+    <Folder Name="Properties" Id="{1e9f1a0b-564e-4d2c-999c-e6fa185bf8fe}">
+      <Folder Name="Status" Id="{27812ea6-a1bb-45b3-9eef-442dd83390b3}" />
+    </Folder>
+    <Folder Name="Requests" Id="{a7302af8-d58d-4996-89e4-745e47d270f1}" />
+    <Folder Name="StateMachine" Id="{c7ae766c-ce62-4967-8abd-12db5024d97b}" />
+    <Property Name="Active" Id="{21e62e33-109e-4cfa-8da0-3919420a2a18}" FolderPath="Properties\Status\">
+      <Declaration><![CDATA[PROPERTY Active : REFERENCE TO BOOL
+]]></Declaration>
+      <Get Name="Get" Id="{08edbf55-39d9-4cf2-8085-708fc62c2a0f}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Active REF= bActive;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Busy" Id="{399d0d92-c7ca-4011-9929-138a63b8bcb6}" FolderPath="Properties\Status\">
+      <Declaration><![CDATA[PROPERTY Busy : REFERENCE TO BOOL
+]]></Declaration>
+      <Get Name="Get" Id="{4765c5c1-4455-437d-b38c-52db4c1070b9}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Busy REF= bBusy;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Error" Id="{2e12cced-0eb6-41da-b687-df0a8da9a8e4}" FolderPath="Properties\Status\">
+      <Declaration><![CDATA[PROPERTY Error : REFERENCE TO BOOL
+]]></Declaration>
+      <Get Name="Get" Id="{2a94321e-6b85-408f-b8ea-b66a0b432499}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Error REF= bError;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="ErrorID" Id="{e87892d1-d942-4bf3-b80f-5011f6b619e5}" FolderPath="Properties\Status\">
+      <Declaration><![CDATA[PROPERTY ErrorID : REFERENCE TO UDINT
+]]></Declaration>
+      <Get Name="Get" Id="{db65e3fe-82ed-4735-9e07-41eb42f990e4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ErrorID REF= iErrorID;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="MR_CommandStation1" Id="{f01283d1-8c3f-4149-b019-7ffdb868dfcf}" FolderPath="Requests\">
+      <Declaration><![CDATA[METHOD MR_CommandStation1 : BOOL
+VAR_INPUT
+	uStationNumber: USINT;
+END_VAR
+VAR_OUTPUT
+	sResult: STRING;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MR_FirstCycle" Id="{a86db168-ac82-4deb-8bef-488cafc9729c}" FolderPath="FirstCycle\">
+      <Declaration><![CDATA[METHOD MR_FirstCycle : BOOL
+VAR_INPUT
+	sCameraName 	: STRING;		(*  *)
+	sClientHost		: T_IPv4Addr;	(*  *)
+	sClientAmsNetID : T_AmsNetID;	(*  *)
+	iClientPort		: UINT;			(*  *)
+	tTimeout		: TIME;			(*  *)
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(* Set fixture name *)
+THIS^.sName := sCameraName;
+
+(* Set fixture server initial parameters *)
+THIS^.fbTcpClient.MR_FirstCycle(	sName 		:= CONCAT('TCP/IP client of ',sCameraName),
+									sHost		:= sClientHost,
+									sAmsNetID	:= sClientAmsNetID,
+									iPort 		:= iClientPort,
+									tTimeout 	:= tTimeout);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MR_GetImage" Id="{ae9d01da-e4e9-4769-8f10-c7a779c729c5}" FolderPath="Requests\">
+      <Declaration><![CDATA[METHOD MR_GetImage : BOOL
+VAR_INPUT
+	uStationNumber: USINT;
+END_VAR
+VAR_OUTPUT
+	sResult: STRING;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF eCameraState = RTC_IDLE THEN
+	THIS^.uStationNumber := uStationNumber;
+	bBusy := TRUE;
+	MR_GetImage := FALSE;
+	eCameraState := RTC_GET_IMAGE;
+	fbMachineLogger.MR_AddLogs(CONCAT(sName,CONCAT(' : getting image at Station number ',CONCAT(USINT_TO_STRING(uStationNumber),' requested'))));
+
+ELSIF eCameraState = RTC_METHOD_DONE THEN
+	sResult := THIS^.sResult;
+	
+	bBusy := FALSE;
+	MR_GetImage := TRUE;
+	fbMachineLogger.MR_AddLogs(CONCAT(sName,CONCAT(' : getting image at Station number ',CONCAT(USINT_TO_STRING(uStationNumber),' done'))));
+
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MR_GetResultStation1" Id="{66be39cb-d258-4e77-b03f-0ece1307e762}" FolderPath="Requests\">
+      <Declaration><![CDATA[METHOD MR_GetResultStation1 : BOOL
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF eCameraState = RTC_IDLE THEN
+	bBusy := TRUE;
+	MR_GetResultStation1 := FALSE;
+	eCameraState := RTC_GET_RESULT_STATION_1;
+	fbMachineLogger.MR_AddLogs(CONCAT(sName,' : returning the result of the station 1 requested'));	
+	
+ELSIF eCameraState = RTC_METHOD_DONE THEN
+	bBusy := FALSE;
+	MR_GetResultStation1 := TRUE;
+	fbMachineLogger.MR_AddLogs(CONCAT(sName,' : returning the result of the station 1 done'));	
+
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MR_Init" Id="{93938f1a-871a-48b5-85ed-065d285b78fb}" FolderPath="Requests\">
+      <Declaration><![CDATA[METHOD MR_Init : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF eCameraState = RTC_UNINITIALIZED THEN
+	bBusy := TRUE;
+	MR_Init := FALSE;
+	eCameraState := RTC_INITIALIZING;
+	fbMachineLogger.MR_AddLogs(CONCAT(sName,' : initializing requested'));
+	
+ELSIF eCameraState >= RTC_READY THEN
+	bBusy := FALSE;
+	MR_Init := TRUE;
+	fbMachineLogger.MR_AddLogs(CONCAT(sName,' : initializing done'));	
+	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MS_GetImage" Id="{5c173877-1d21-4e44-9d0d-09f9c4d4773a}" FolderPath="StateMachine\">
+      <Declaration><![CDATA[METHOD PROTECTED MS_GetImage
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE eCameraMethodState OF
+	RTC_METHOD_SEND_COMMAND:
+		MEMSET(ADR(sSendMessage),0,SIZEOF(sSendMessage));
+		sSendMessage := FUN_MergeStrings5('GI',TO_STRING(THIS^.uStationNumber),'$R$L','','');
+		FUN_StringToTcpBufferData(ADR(sSendMessage),ADR(stSendData));
+		
+		IF fbTcpClient.MR_AppendToSendBuffer(stSendData) THEN
+			eCameraMethodState := RTC_METHOD_RECEIVE_RESPONSE;
+		END_IF
+	
+	RTC_METHOD_RECEIVE_RESPONSE:
+		stReciveData := fbTcpClient.NextRecivedMessage;
+		
+		IF stReciveData.iLength > 0 THEN
+			MEMSET(ADR(sReciveMessage),0,SIZEOF(sReciveMessage));
+			FUN_TcpBufferDataToString(ADR(sReciveMessage),ADR(stReciveData));
+			sResult := sReciveMessage;
+			
+			eCameraMethodState := RTC_METHOD_SEND_COMMAND;
+			eCameraState := RTC_METHOD_DONE;
+		END_IF		
+		
+	
+	
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MS_GetResultStation1" Id="{7a3f3035-2390-4df2-9530-3badc8e1860f}" FolderPath="StateMachine\">
+      <Declaration><![CDATA[METHOD PROTECTED MS_GetResultStation1 : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE eCameraMethodState OF
+	RTC_METHOD_SEND_COMMAND:
+		MEMSET(ADR(sSendMessage),0,SIZEOF(sSendMessage));
+		sSendMessage := 'GRS1$R$L';
+		FUN_StringToTcpBufferData(ADR(sSendMessage),ADR(stSendData));
+		
+		IF fbTcpClient.MR_AppendToSendBuffer(stSendData) THEN
+			eCameraMethodState := RTC_METHOD_RECEIVE_RESPONSE;
+							
+		END_IF
+		
+	RTC_METHOD_RECEIVE_RESPONSE:
+		stReciveData := fbTcpClient.NextRecivedMessage;
+		
+		IF stReciveData.iLength > 0 THEN
+			MEMSET(ADR(sReciveMessage),0,SIZEOF(sReciveMessage));
+			FUN_TcpBufferDataToString(ADR(sReciveMessage),ADR(stReciveData));
+			MEMCPY(ADR(sLastStatusCode),ADR(sReciveMessage),2);
+			iLastStatusCode := STRING_TO_INT(sLastStatusCode);
+			
+			IF iLastStatusCode = 0 THEN 
+				eCameraGetOnlineStatus := 0;
+				
+			ELSIF iLastStatusCode = 1 THEN
+				eCameraGetOnlineStatus := 1;
+				
+			END_IF	
+			eCameraMethodState := CAMERA_METHOD_SEND_COMMAND;
+			eCameraState := CAMERA_METHOD_DONE;
+
+		END_IF
+	
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MS_Idle" Id="{aace2595-2f4e-4ca7-bf72-bb3dde777c32}" FolderPath="StateMachine\">
+      <Declaration><![CDATA[METHOD PROTECTED MS_Idle]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MS_Initializing" Id="{204bd956-64b3-4e96-92b4-37bbb79dcc6b}" FolderPath="StateMachine\">
+      <Declaration><![CDATA[METHOD PROTECTED MS_Initializing
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE eCameraInitState OF
+	RTC_INIT_CONNECTION:
+		fbTcpClient.MR_Init();
+		
+		IF fbTcpClient.Active THEN
+			eCameraInitState := RTC_INIT_CLEAR_BUFFER;	
+			
+		ELSIF fbTcpClient.Error THEN
+			bError := TRUE;
+			iErrorID := fbTcpClient.ErrorID;
+			
+		END_IF
+		
+	RTC_INIT_CLEAR_BUFFER:
+		fbTcpClient.MR_ClearAllBuffers();
+		eCameraInitState := RTC_INIT_WAIT_FOR_USERNAME;
+		
+		IF fbTcpClient.Error THEN
+			bError := TRUE;
+			iErrorID := fbTcpClient.ErrorID;
+			
+		END_IF
+	
+	RTC_INIT_WAIT_FOR_USERNAME:
+		eCameraInitState := RTC_INIT_WRITE_USER;
+		
+	RTC_INIT_WRITE_USER:
+		eCameraInitState := RTC_INIT_WAIT_FOR_PASSWORD;
+		
+	RTC_INIT_WAIT_FOR_PASSWORD:
+		eCameraInitState := RTC_INIT_WRITE_PASSWORD;
+		
+	RTC_INIT_WRITE_PASSWORD:
+		eCameraInitState := RTC_INIT_WAIT_FOR_CONFIRMATION;
+		
+	RTC_INIT_WAIT_FOR_CONFIRMATION:
+		stReciveData := fbTcpClient.NextRecivedMessage;
+		
+		IF stReciveData.iLength > 0 THEN
+			MEMSET(ADR(sReciveMessage),0,SIZEOF(sReciveMessage));
+			FUN_TcpBufferDataToString(ADR(sReciveMessage),ADR(stReciveData));
+			
+			IF sReciveMessage = 'User Logged In' THEN		
+				eCameraInitState := RTC_INIT_DONE;			
+			END_IF			
+		END_IF
+	
+	RTC_INIT_DONE:
+		eCameraInitState := RTC_INIT_CONNECTION;
+		eCameraState := RTC_READY;
+	
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MS_MethodDone" Id="{ed4d9020-d567-492f-9af2-5b243a6ef203}" FolderPath="StateMachine\">
+      <Declaration><![CDATA[METHOD PROTECTED MS_MethodDone
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT bBusy THEN
+	eCameraState := RTC_IDLE;
+
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MS_Ready" Id="{0e292569-6a39-4aa4-9a1f-84d98c9c0bf3}" FolderPath="StateMachine\">
+      <Declaration><![CDATA[METHOD PROTECTED MS_Ready]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[eCameraState := RTC_IDLE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MS_Uninitialized" Id="{360ba870-9803-418c-bfe8-5b2f45c81789}" FolderPath="StateMachine\">
+      <Declaration><![CDATA[METHOD PROTECTED MS_Uninitialized
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="StateMachine" Id="{711dbc96-48e0-41bf-9791-eab94cc8d48a}" FolderPath="StateMachine\">
+      <Declaration><![CDATA[METHOD PROTECTED StateMachine]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE eCameraState OF
+	RTC_UNINITIALIZED:
+		MS_Uninitialized();
+		
+	RTC_INITIALIZING:
+		MS_Initializing();
+		
+	RTC_READY:
+		MS_Ready();
+	
+	RTC_IDLE:
+		MS_Idle();
+		
+	RTC_GET_RESULT_STATION_1:
+		MS_GetResultStation1();
+		
+	RTC_METHOD_DONE:
+		MS_MethodDone();
+	
+
+		
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_RTCVision">
+      <LineId Id="20" Count="3" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="27" Count="6" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="46" Count="1" />
+      <LineId Id="49" Count="2" />
+      <LineId Id="45" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.Active.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.Busy.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.Error.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.ErrorID.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MR_CommandStation1">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MR_FirstCycle">
+      <LineId Id="11" Count="7" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MR_GetImage">
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="10" Count="3" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="8" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MR_GetResultStation1">
+      <LineId Id="5" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="10" Count="5" />
+      <LineId Id="17" Count="1" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MR_Init">
+      <LineId Id="5" Count="1" />
+      <LineId Id="8" Count="1" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="11" Count="1" />
+      <LineId Id="14" Count="2" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MS_GetImage">
+      <LineId Id="5" Count="1" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="9" Count="2" />
+      <LineId Id="14" Count="1" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="16" Count="1" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="25" Count="2" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="35" Count="1" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="19" Count="2" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MS_GetResultStation1">
+      <LineId Id="5" Count="1" />
+      <LineId Id="9" Count="6" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="16" Count="1" />
+      <LineId Id="20" Count="17" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MS_Idle">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MS_Initializing">
+      <LineId Id="5" Count="1" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="10" Count="6" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="17" Count="1" />
+      <LineId Id="21" Count="6" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="28" Count="2" />
+      <LineId Id="38" Count="14" />
+      <LineId Id="54" Count="1" />
+      <LineId Id="57" Count="1" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="32" Count="1" />
+      <LineId Id="59" Count="1" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MS_MethodDone">
+      <LineId Id="5" Count="1" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MS_Ready">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.MS_Uninitialized">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RTCVision.StateMachine">
+      <LineId Id="5" Count="1" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="10" Count="6" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="17" Count="6" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

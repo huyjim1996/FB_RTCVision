@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<TcEventSources Version="2">
+	<Source>
+		<GUID>{E75A14BF-7947-4CCD-9338-D8DA62175788}</GUID>
+		<Name LcId="1033">ShellTcpIpDeviceEventClass</Name>
+		<Event>
+			<Id>1</Id>
+			<Message LcId="1033">Connection lost (error ID: {0})</Message>
+		</Event>
+		<Event>
+			<Id>2</Id>
+			<Message LcId="1033">Closing socket failed (error ID: {0})</Message>
+		</Event>
+		<Event>
+			<Id>3</Id>
+			<Message LcId="1033">Creating listener socket failed (error ID: {0})</Message>
+		</Event>
+		<Event>
+			<Id>4</Id>
+			<Message LcId="1033">Creating client socket failed (error ID: {0})</Message>
+		</Event>
+		<Event>
+			<Id>5</Id>
+			<Message LcId="1033">Closing connection with client failed (error ID: {0})</Message>
+		</Event>
+		<Event>
+			<Id>6</Id>
+			<Message LcId="1033">Waiting for connection with client failed (error ID: {0})</Message>
+		</Event>
+	</Source>
+</TcEventSources>
